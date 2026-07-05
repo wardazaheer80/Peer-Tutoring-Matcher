@@ -1,0 +1,193 @@
+import tkinter as tk
+from tkinter import ttk, messagebox
+
+class PeerTutoringApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Peer Tutoring Matcher (Intermediate Pro)")
+        self.root.geometry("850x720")
+        
+        # Core Databases (State Management)
+        self.all_students = []
+        self.all_tutors = []
+        
+        self.matches = []
+        self.unmatched_students = []
+        self.unmatched_tutors = []
+
+        self.create_widgets()
+
+    def create_widgets(self):
+        title_lbl = tk.Label(self.root, text="Peer Tutoring Match Engine", font=("Arial", 16, "bold"))
+        title_lbl.pack(pady=10)
+
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill="both", expand=True, padx=10, pady=5)
+
+        # Tab 1: Dashboard
+        self.match_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.match_tab, text="Match Dashboard")
+        self.setup_match_tab()
+
+        # Tab 2: Register
+        self.data_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.data_tab, text="Register Students/Tutors")
+        self.setup_data_tab()
+
+    def setup_match_tab(self):
+        # Trigger Button
+        match_btn = tk.Button(self.match_tab, text="⚡ Run Full Optimization Matcher", font=("Arial", 11, "bold"),
+                              bg="#2b5c8f", fg="white", command=self.run_matching_algorithm)
+        match_btn.pack(pady=10)
+
+        # TABLE 1: SUCCESSFUL MATCHES
+        tk.Label(self.match_tab, text="🟢 Successful Matches", font=("Arial", 10, "bold"), fg="green").pack(anchor="w", padx=15)
+        columns = ("Student", "Tutor", "Subject", "Scheduled Time")
+        self.match_tree = ttk.Treeview(self.match_tab, columns=columns, show="headings", height=6)
+        for col in columns:
+            self.match_tree.heading(col, text=col)
+            self.match_tree.column(col, width=150, anchor="center")
+        self.match_tree.pack(fill="x", padx=10, pady=5)
+
+        # LOWER FRAMES FOR WAITING LISTS (Side-by-Side Setup)
+        lists_frame = tk.Frame(self.match_tab)
+        lists_frame.pack(fill="both", expand=True, padx=10, pady=5)
+
+        # TABLE 2: UNMATCHED STUDENTS (Left Side)
+        student_frame = tk.Frame(lists_frame)
+        student_frame.pack(side="left", fill="both", expand=True, padx=5)
+        tk.Label(student_frame, text="🟡 Unmatched Students (Waiting List)", font=("Arial", 10, "bold"), fg="#b8860b").pack(anchor="w")
+        
+        s_cols = ("Student Name", "Subject", "Time")
+        self.student_tree = ttk.Treeview(student_frame, columns=s_cols, show="headings", height=6)
+        for col in s_cols:
+            self.student_tree.heading(col, text=col)
+            self.student_tree.column(col, width=120, anchor="center")
+        self.student_tree.pack(fill="both", expand=True, pady=5)
+
+        # TABLE 3: UNMATCHED TUTORS (Right Side)
+        tutor_frame = tk.Frame(lists_frame)
+        tutor_frame.pack(side="right", fill="both", expand=True, padx=5)
+        tk.Label(tutor_frame, text="🔵 Unmatched Tutors (Waiting List)", font=("Arial", 10, "bold"), fg="#4682b4").pack(anchor="w")
+        
+        t_cols = ("Tutor Name", "Subject", "Time")
+        self.tutor_tree = ttk.Treeview(tutor_frame, columns=t_cols, show="headings", height=6)
+        for col in t_cols:
+            self.tutor_tree.heading(col, text=col)
+            self.tutor_tree.column(col, width=120, anchor="center")
+        self.tutor_tree.pack(fill="both", expand=True, pady=5)
+
+    def setup_data_tab(self):
+        form_frame = tk.LabelFrame(self.data_tab, text=" Add New Record ", padx=10, pady=10)
+        form_frame.pack(pady=20, padx=20, fill="x")
+
+        tk.Label(form_frame, text="Role:").grid(row=0, column=0, sticky="w", pady=5)
+        self.role_var = tk.StringVar(value="Student")
+        ttk.Combobox(form_frame, textvariable=self.role_var, values=["Student", "Tutor"], state="readonly").grid(row=0, column=1, pady=5)
+
+        tk.Label(form_frame, text="Name:").grid(row=1, column=0, sticky="w", pady=5)
+        self.name_entry = tk.Entry(form_frame, width=25)
+        self.name_entry.grid(row=1, column=1, pady=5)
+
+        tk.Label(form_frame, text="Subject:").grid(row=2, column=0, sticky="w", pady=5)
+        self.sub_var = tk.StringVar()
+        ttk.Combobox(form_frame, textvariable=self.sub_var, values=["Math", "Physics", "Chemistry", "Computer Science"], state="readonly").grid(row=2, column=1, pady=5)
+
+        tk.Label(form_frame, text="Availability:").grid(row=3, column=0, sticky="w", pady=5)
+        self.time_entry = tk.Entry(form_frame, width=25)
+        self.time_entry.insert(0, "Monday 9am")
+        self.time_entry.grid(row=3, column=1, pady=5)
+
+        save_btn = tk.Button(form_frame, text="Save & Check Match", bg="#2ca02c", fg="white", command=self.add_record)
+        save_btn.grid(row=4, column=0, columnspan=2, pady=10)
+
+    def add_record(self):
+        name = self.name_entry.get().strip()
+        subject = self.sub_var.get()
+        time = self.time_entry.get().strip().lower() # Standardized for case-insensitive processing
+        role = self.role_var.get()
+
+        if not name or not subject or not time:
+            messagebox.showwarning("Input Error", "Please fill out all fields.")
+            return
+
+        person = {"name": name, "subject": subject, "time": time}
+        
+        if role == "Student":
+            self.all_students.append(person)
+            # Smart Check: Look for an available tutor matching this new student's criteria
+            auto_matched = False
+            for tutor in self.unmatched_tutors:
+                if tutor["subject"] == person["subject"] and tutor["time"] == person["time"]:
+                    self.matches.append({"student": person["name"], "tutor": tutor["name"], "subject": subject, "time": time})
+                    self.unmatched_tutors.remove(tutor)
+                    messagebox.showinfo("⚡ Auto Match!", f"Student '{name}' has been automatically paired with Tutor '{tutor['name']}' from the Waiting List!")
+                    auto_matched = True
+                    break
+            if not auto_matched:
+                self.unmatched_students.append(person)
+                messagebox.showinfo("Registered", f"Student '{name}' has been added to the waiting list.")
+                
+        else: # Role == Tutor
+            self.all_tutors.append(person)
+            # Smart Check: Look for a waiting student matching this new tutor's criteria
+            auto_matched = False
+            for student in self.unmatched_students:
+                if student["subject"] == person["subject"] and student["time"] == person["time"]:
+                    self.matches.append({"student": student["name"], "tutor": person["name"], "subject": subject, "time": time})
+                    self.unmatched_students.remove(student)
+                    messagebox.showinfo("⚡ Auto Match!", f"New Tutor '{name}' has been automatically paired with waiting Student '{student['name']}'!")
+                    auto_matched = True
+                    break
+            if not auto_matched:
+                self.unmatched_tutors.append(person)
+                messagebox.showinfo("Registered", f"Tutor '{name}' has been added to the waiting list.")
+
+        self.name_entry.delete(0, tk.END)
+        self.update_ui_tables()
+
+    def run_matching_algorithm(self):
+        # Refresh and optimize entire data allocation lists from scratch
+        self.matches = []
+        self.unmatched_students = []
+        self.unmatched_tutors = list(self.all_tutors) # Make a mutable allocation copy
+
+        for student in self.all_students:
+            found = False
+            for tutor in self.unmatched_tutors:
+                if tutor["subject"] == student["subject"] and tutor["time"] == student["time"]:
+                    self.matches.append({
+                        "student": student["name"], 
+                        "tutor": tutor["name"], 
+                        "subject": student["subject"], 
+                        "time": student["time"]
+                    })
+                    self.unmatched_tutors.remove(tutor)
+                    found = True
+                    break
+            if not found:
+                self.unmatched_students.append(student)
+
+        self.update_ui_tables()
+        messagebox.showinfo("Optimization Ran", "Engine execution finished. All dynamic queues updated successfully.")
+
+    def update_ui_tables(self):
+        # Clear GUI trees safely
+        for tree in (self.match_tree, self.student_tree, self.tutor_tree):
+            for item in tree.get_children():
+                tree.delete(item)
+
+        # Populate tables dynamically
+        for m in self.matches:
+            self.match_tree.insert("", "end", values=(m["student"], m["tutor"], m["subject"], m["time"]))
+            
+        for s in self.unmatched_students:
+            self.student_tree.insert("", "end", values=(s["name"], s["subject"], s["time"]))
+            
+        for t in self.unmatched_tutors:
+            self.tutor_tree.insert("", "end", values=(t["name"], t["subject"], t["time"]))
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = PeerTutoringApp(root)
+    root.mainloop()
